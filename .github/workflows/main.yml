@@ -55,8 +55,9 @@ jobs:
         tweak: ['ytlite', 'youpip', 'ytuhd', 'yq', 'ryd', 'demc', 'safari-ext']
         
     if: |
-      (matrix.tweak == 'ytlite') ||
+      (github.event_name == 'push' && matrix.tweak == 'ytlite') ||
       (github.event_name == 'workflow_dispatch' && (
+        (matrix.tweak == 'ytlite') ||
         (matrix.tweak == 'youpip' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_youpip)) ||
         (matrix.tweak == 'ytuhd' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_ytuhd)) ||
         (matrix.tweak == 'yq' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_yq)) ||
