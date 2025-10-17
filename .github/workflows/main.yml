@@ -54,18 +54,6 @@ jobs:
       matrix:
         tweak: ['ytlite', 'youpip', 'ytuhd', 'yq', 'ryd', 'demc', 'safari-ext']
         
-    if: |
-      (github.event_name == 'push' && matrix.tweak == 'ytlite') ||
-      (github.event_name == 'workflow_dispatch' && (
-        (matrix.tweak == 'ytlite') ||
-        (matrix.tweak == 'youpip' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_youpip)) ||
-        (matrix.tweak == 'ytuhd' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_ytuhd)) ||
-        (matrix.tweak == 'yq' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_yq)) ||
-        (matrix.tweak == 'ryd' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_ryd)) ||
-        (matrix.tweak == 'demc' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_demc)) ||
-        (matrix.tweak == 'safari-ext' && github.event.inputs.enable_safari_extension)
-      ))
-
     steps:
       - name: Checkout Source Code (for YTLite only)
         if: matrix.tweak == 'ytlite'
@@ -84,6 +72,17 @@ jobs:
           ./theos/bin/install-sdks 16.5
 
       - name: Build Tweak
+        if: |
+          (github.event_name == 'push' && matrix.tweak == 'ytlite') ||
+          (github.event_name == 'workflow_dispatch' && (
+            (matrix.tweak == 'ytlite') ||
+            (matrix.tweak == 'youpip' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_youpip)) ||
+            (matrix.tweak == 'ytuhd' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_ytuhd)) ||
+            (matrix.tweak == 'yq' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_yq)) ||
+            (matrix.tweak == 'ryd' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_ryd)) ||
+            (matrix.tweak == 'demc' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_demc)) ||
+            (matrix.tweak == 'safari-ext' && github.event.inputs.enable_safari_extension)
+          ))
         env:
           THEOS: ${{ github.workspace }}/theos
         run: |
@@ -103,6 +102,17 @@ jobs:
           esac
 
       - name: Upload Artifact
+        if: |
+          (github.event_name == 'push' && matrix.tweak == 'ytlite') ||
+          (github.event_name == 'workflow_dispatch' && (
+            (matrix.tweak == 'ytlite') ||
+            (matrix.tweak == 'youpip' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_youpip)) ||
+            (matrix.tweak == 'ytuhd' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_ytuhd)) ||
+            (matrix.tweak == 'yq' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_yq)) ||
+            (matrix.tweak == 'ryd' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_ryd)) ||
+            (matrix.tweak == 'demc' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_demc)) ||
+            (matrix.tweak == 'safari-ext' && github.event.inputs.enable_safari_extension)
+          ))
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.tweak }}
