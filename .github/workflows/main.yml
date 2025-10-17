@@ -1,4 +1,4 @@
-name: Build YTLite IPA
+name: Build YTLite IPA (Optimized)
 
 on:
   workflow_dispatch:
@@ -7,9 +7,8 @@ on:
         description: "URL to the decrypted YouTube IPA file"
         required: true
         type: string
-      # NEW: The "Select All" checkbox
       enable_all_tweaks:
-        description: "Integrate ALL tweaks (YouPiP, YTUHD, YQ, RYD, DEMC)"
+        description: "Integrate ALL optional tweaks (YouPiP, YTUHD, etc.)"
         type: boolean
         default: false
       enable_safari_extension:
@@ -39,29 +38,31 @@ on:
       display_name:
         description: "App Name (Optional)"
         default: "YouTube"
-        required: false
       bundle_id:
         description: "BundleID (Optional)"
         default: "com.google.ios.youtube"
-        required: false
 
 jobs:
-  build_ipa:
-    name: Build IPA
+  build:
     runs-on: macos-latest
-    permissions:
-      contents: write
+    strategy:
+      matrix:
+        tweak: ['ytlite', 'youpip', 'ytuhd', 'yq', 'ryd', 'demc', 'safari-ext']
+        
+    # Conditionally enable jobs based on user input
+    if: |
+      (matrix.tweak == 'ytlite') ||
+      (matrix.tweak == 'youpip' && (inputs.enable_all_tweaks || inputs.enable_youpip)) ||
+      (matrix.tweak == 'ytuhd' && (inputs.enable_all_tweaks || inputs.enable_ytuhd)) ||
+      (matrix.tweak == 'yq' && (inputs.enable_all_tweaks || inputs.enable_yq)) ||
+      (matrix.tweak == 'ryd' && (inputs.enable_all_tweaks || inputs.enable_ryd)) ||
+      (matrix.tweak == 'demc' && (inputs.enable_all_tweaks || inputs.enable_demc)) ||
+      (matrix.tweak == 'safari-ext' && inputs.enable_safari_extension)
 
     steps:
-      - name: Checkout Your YTLite Source Code
+      - name: Checkout Source Code
+        if: matrix.tweak == 'ytlite'
         uses: actions/checkout@v4
-
-      - name: Get Short Git Commit Hash
-        id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Install Dependencies
-        run: brew install make ldid
 
       - name: Cache and Setup Theos
         id: theos
@@ -75,74 +76,73 @@ jobs:
           git clone --depth=1 --recursive https://github.com/theos/theos.git
           ./theos/bin/install-sdks 16.5
 
+      - name: Build Tweak
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: |
+          # YTLite (from your source)
+          if [ "${{ matrix.tweak }}" == "ytlite" ]; then
+            make clean package FINALPACKAGE=1
+            mv packages/*.deb ${{ github.workspace }}/ytlite.deb
+          fi
+          # Optional Tweaks
+          if [ "${{ matrix.tweak }}" != "ytlite" ] && [ "${{ matrix.tweak }}" != "safari-ext" ]; then
+            git clone --depth=1 https://github.com/PoomSmart/YouTubeHeader.git $THEOS/include/YouTubeHeader
+            git clone --depth=1 https://github.com/PoomSmart/PSHeader.git $THEOS/include/PSHeader
+          fi
+          # Specific build commands
+          case "${{ matrix.tweak }}" in
+            youpip) git clone --depth=1 https://github.com/PoomSmart/YouPiP.git && cd YouPiP && make clean package FINALPACKAGE=1 && mv packages/*.deb ../youpip.deb ;;
+            ytuhd) git clone --depth=1 https://github.com/PoomSmart/YTUHD.git && cd YTUHD && make clean package FINALPACKAGE=1 && mv packages/*.deb ../ytuhd.deb ;;
+            yq) git clone --depth=1 https://github.com/PoomSmart/YouQuality.git && cd YouQuality && make clean package FINALPACKAGE=1 && mv packages/*.deb ../yq.deb ;;
+            ryd) git clone --depth=1 https://github.com/PoomSmart/Return-YouTube-Dislikes.git && cd Return-YouTube-Dislikes && make clean package FINALPACKAGE=1 && mv packages/*.deb ../ryd.deb ;;
+            demc) cp -r $THEOS/include/YouTubeHeader $THEOS/include/YTHeaders && git clone --depth=1 --recurse-submodules https://github.com/therealFoxster/DontEatMyContent.git && cd DontEatMyContent && make clean package FINALPACKAGE=1 && mv packages/*.deb ../demc.deb ;;
+            "safari-ext") git clone --depth=1 https://github.com/CokePokes/YoutubeExtensions.git && mv YoutubeExtensions/OpenYoutubeSafariExtension.appex . ;;
+          esac
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.tweak }}
+          path: |
+            ${{ matrix.tweak }}.deb
+            OpenYoutubeSafariExtension.appex
+          if-no-files-found: ignore
+
+  package:
+    name: Package IPA
+    needs: build
+    runs-on: macos-latest
+    if: always() # Ensures this job runs even if optional tweaks were skipped
+
+    steps:
+      - name: Get Short Git Commit Hash
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Install Pyzule
         run: pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
 
       - name: Download and Validate IPA
         run: |
-          wget -q "${{ inputs.ipa_url }}" -O youtube.ipa
+          wget -q "${{ github.event.inputs.ipa_url }}" -O youtube.ipa
           file_type=$(file --mime-type -b youtube.ipa)
           if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
-            echo "::error::Validation failed: The downloaded file is not a valid IPA. Detected type: $file_type."
+            echo "::error::Validation failed: The downloaded file is not a valid IPA."
             exit 1
           fi
 
-      - name: Build YTLite from Your Source
-        run: |
-          export THEOS=${{ github.workspace }}/theos
-          make clean package FINALPACKAGE=1
-          mv packages/*.deb ${{ github.workspace }}/ytlite.deb
-        env:
-          THEOS: ${{ github.workspace }}/theos
-
-      - name: Clone and Build Optional Tweaks
-        run: |
-          export THEOS=${{ github.workspace }}/theos
-          git clone --depth=1 https://github.com/PoomSmart/YouTubeHeader.git $THEOS/include/YouTubeHeader
-          git clone --depth=1 https://github.com/PoomSmart/PSHeader.git $THEOS/include/PSHeader
-          # UPDATED: Logic now checks for 'enable_all_tweaks' OR the individual checkbox
-          if [ "${{ inputs.enable_all_tweaks || inputs.enable_youpip }}" == "true" ]; then
-            git clone --depth=1 https://github.com/PoomSmart/YouPiP.git && cd YouPiP
-            make clean package FINALPACKAGE=1 && mv packages/*.deb ${{ github.workspace }}/youpip.deb && cd ..
-          fi
-          if [ "${{ inputs.enable_all_tweaks || inputs.enable_ytuhd }}" == "true" ]; then
-            git clone --depth=1 https://github.com/PoomSmart/YTUHD.git && cd YTUHD
-            make clean package FINALPACKAGE=1 && mv packages/*.deb ${{ github.workspace }}/ytuhd.deb && cd ..
-          fi
-          if [ "${{ inputs.enable_all_tweaks || inputs.enable_yq }}" == "true" ]; then
-            git clone --depth=1 https://github.com/PoomSmart/YouQuality.git && cd YouQuality
-            make clean package FINALPACKAGE=1 && mv packages/*.deb ${{ github.workspace }}/yq.deb && cd ..
-          fi
-          if [ "${{ inputs.enable_all_tweaks || inputs.enable_ryd }}" == "true" ]; then
-            git clone --depth=1 https://github.com/PoomSmart/Return-YouTube-Dislikes.git && cd Return-YouTube-Dislikes
-            make clean package FINALPACKAGE=1 && mv packages/*.deb ${{ github.workspace }}/ryd.deb && cd ..
-          fi
-          if [ "${{ inputs.enable_all_tweaks || inputs.enable_demc }}" == "true" ]; then
-            cp -r $THEOS/include/YouTubeHeader $THEOS/include/YTHeaders
-            git clone --depth=1 --recurse-submodules https://github.com/therealFoxster/DontEatMyContent.git && cd DontEatMyContent
-            make clean package FINALPACKAGE=1 && mv packages/*.deb ${{ github.workspace }}/demc.deb && cd ..
-          fi
-        env:
-          THEOS: ${{ github.workspace }}/theos
-
-      - name: Clone Optional Safari Extension
-        if: ${{ inputs.enable_safari_extension }}
-        run: |
-          git clone --depth=1 https://github.com/CokePokes/YoutubeExtensions.git
-          mv YoutubeExtensions/OpenYoutubeSafariExtension.appex ${{ github.workspace }}/
+      - name: Download All Built Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
       - name: Inject Tweaks and Build Final IPA
         run: |
-          TWEAKS_TO_INJECT="ytlite.deb"
-          for tweak_deb in youpip.deb ytuhd.deb yq.deb ryd.deb demc.deb; do
-            if [ -f "$tweak_deb" ]; then
-              TWEAKS_TO_INJECT="$TWEAKS_TO_INJECT $tweak_deb"
-            fi
-          done
-          if [ -d "OpenYoutubeSafariExtension.appex" ]; then
-            TWEAKS_TO_INJECT="$TWEAKS_TO_INJECT OpenYoutubeSafariExtension.appex"
-          fi
-          pyzule -i youtube.ipa -o "YTLite-${{ steps.vars.outputs.sha_short }}.ipa" -f $TWEAKS_TO_INJECT -n "${{ inputs.display_name }}" -b "${{ inputs.bundle_id }}"
+          TWEAKS_TO_INJECT=$(find artifacts -type f -name "*.deb" | tr '\n' ' ')
+          TWEAKS_TO_INJECT+=$(find artifacts -type d -name "*.appex" | tr '\n' ' ')
+          echo "Injecting: $TWEAKS_TO_INJECT"
+          pyzule -i youtube.ipa -o "YTLite-${{ steps.vars.outputs.sha_short }}.ipa" -f $TWEAKS_TO_INJECT -n "${{ github.event.inputs.display_name }}" -b "${{ github.event.inputs.bundle_id }}"
 
       - name: Upload IPA to GitHub Releases
         uses: softprops/action-gh-release@v2
