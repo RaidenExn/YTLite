@@ -1,6 +1,9 @@
 name: Build YTLite IPA (Optimized)
 
 on:
+  push:
+    branches:
+      - 'dev-test'
   workflow_dispatch:
     inputs:
       ipa_url:
@@ -42,10 +45,6 @@ on:
         description: "BundleID (Optional)"
         default: "com.google.ios.youtube"
 
-# Define the list of all possible tweaks for easy management
-env:
-  TWEAKS: "['ytlite', 'youpip', 'ytuhd', 'yq', 'ryd', 'demc', 'safari-ext']"
-
 jobs:
   build:
     name: Build ${{ matrix.tweak }}
@@ -53,17 +52,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tweak: ${{ fromJson(env.TWEAKS) }}
+        tweak: ['ytlite', 'youpip', 'ytuhd', 'yq', 'ryd', 'demc', 'safari-ext']
         
-    # This condition ensures that a build job only runs if it's selected in the inputs.
     if: |
       (matrix.tweak == 'ytlite') ||
-      (matrix.tweak == 'youpip' && (inputs.enable_all_tweaks || inputs.enable_youpip)) ||
-      (matrix.tweak == 'ytuhd' && (inputs.enable_all_tweaks || inputs.enable_ytuhd)) ||
-      (matrix.tweak == 'yq' && (inputs.enable_all_tweaks || inputs.enable_yq)) ||
-      (matrix.tweak == 'ryd' && (inputs.enable_all_tweaks || inputs.enable_ryd)) ||
-      (matrix.tweak == 'demc' && (inputs.enable_all_tweaks || inputs.enable_demc)) ||
-      (matrix.tweak == 'safari-ext' && inputs.enable_safari_extension)
+      (github.event_name == 'workflow_dispatch' && (
+        (matrix.tweak == 'youpip' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_youpip)) ||
+        (matrix.tweak == 'ytuhd' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_ytuhd)) ||
+        (matrix.tweak == 'yq' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_yq)) ||
+        (matrix.tweak == 'ryd' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_ryd)) ||
+        (matrix.tweak == 'demc' && (github.event.inputs.enable_all_tweaks || github.event.inputs.enable_demc)) ||
+        (matrix.tweak == 'safari-ext' && github.event.inputs.enable_safari_extension)
+      ))
 
     steps:
       - name: Checkout Source Code (for YTLite only)
@@ -86,13 +86,11 @@ jobs:
         env:
           THEOS: ${{ github.workspace }}/theos
         run: |
-          # Clone common headers needed by most PoomSmart tweaks
           if [[ "${{ matrix.tweak }}" != "ytlite" && "${{ matrix.tweak }}" != "safari-ext" ]]; then
             git clone --depth=1 https://github.com/PoomSmart/YouTubeHeader.git $THEOS/include/YouTubeHeader
             git clone --depth=1 https://github.com/PoomSmart/PSHeader.git $THEOS/include/PSHeader
           fi
           
-          # Build based on the matrix name
           case "${{ matrix.tweak }}" in
             ytlite) make clean package FINALPACKAGE=1 && mv packages/*.deb . ;;
             youpip) git clone --depth=1 https://github.com/PoomSmart/YouPiP.git && cd YouPiP && make clean package FINALPACKAGE=1 && mv packages/*.deb .. ;;
@@ -116,10 +114,9 @@ jobs:
     name: Package IPA
     needs: build
     runs-on: macos-latest
-    if: always()
+    if: success() && github.event_name == 'workflow_dispatch'
 
     steps:
-      # CRITICAL FIX: Checkout code to get the git hash for naming
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
@@ -146,7 +143,6 @@ jobs:
 
       - name: Inject Tweaks and Build Final IPA
         run: |
-          # Safely find all downloaded .deb files and .appex directories
           INJECTION_FILES=$(find artifacts -type f -name "*.deb" -o -type d -name "*.appex")
           if [ -z "$INJECTION_FILES" ]; then
             echo "::error::No tweaks were built or found. Cannot create IPA."
